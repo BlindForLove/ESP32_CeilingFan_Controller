@@ -1,0 +1,14 @@
+# Credenciales — NUNCA subir
+secrets.yaml
+*.secrets.yaml
+
+# Archivos de contexto internos de desarrollo
+contexto-ventilador-rf.md
+yaml_antihup.txt
+_gen.py
+
+# ESPHome build artifacts
+.esphome/
+build/
+__pycache__/
+*.pyc

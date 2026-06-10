@@ -1,0 +1,399 @@
+esphome:
+  name: ventilador-rf
+  friendly_name: Ventilador_RF
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+    advanced:
+      sram1_as_iram: true
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Ventilador-Rf Fallback Hotspot"
+    password: !secret ap_password
+
+captive_portal:
+
+spi:
+  clk_pin: GPIO14
+  mosi_pin: GPIO23
+  miso_pin: GPIO19
+  interface: hardware
+
+cc1101:
+  id: cc1101_radio
+  cs_pin: GPIO32
+  frequency: 433.92MHz
+  output_power: 11
+
+remote_transmitter:
+  id: rf_tx
+  pin: GPIO26               # GDO0
+  carrier_duty_percent: 100%
+  non_blocking: True
+  rmt_symbols: 128
+  on_transmit:
+    then:
+      - cc1101.begin_tx: { id: cc1101_radio }
+  on_complete:
+    then:
+      - cc1101.begin_rx: { id: cc1101_radio }
+
+# ─────────────────────────────────────────────────────────────
+#  Estado interno
+#   suppress_until : ventana (millis) tras orden del mando -> no retransmitir
+#   last_rx_*   : antirrebote (el mando repite la trama)
+#   luzX_*      : cuenta interna de estado (brillo nivel 1-4, tono 1-3)
+#   (anti-arranque: se usa millis() > 4000 en cada ruta TX, sin global)
+# ─────────────────────────────────────────────────────────────
+globals:
+  - { id: suppress_until, type: uint32_t, restore_value: false, initial_value: '0' }   # ventana anti-retransmision (millis); se auto-expira
+  - { id: last_rx_code, type: uint32_t, restore_value: false, initial_value: '0' }
+  - { id: last_rx_ms,   type: uint32_t, restore_value: false, initial_value: '0' }
+  - { id: luz1_on,      type: bool,     restore_value: true,  initial_value: 'false' }
+  - { id: luz1_lvl,     type: int,      restore_value: true,  initial_value: '8' }   # 1..8 (8 niveles, 7 saltos)
+  - { id: luz1_tone,    type: int,      restore_value: true,  initial_value: '1' }   # 1..3
+  - { id: luz2_on,      type: bool,     restore_value: true,  initial_value: 'false' }
+  - { id: luz2_tone,    type: int,      restore_value: true,  initial_value: '1' }   # 1..3
+
+# ─────────────────────────────────────────────────────────────
+#  SCRIPTS DE TRANSMISION  (tramas capturadas reales del mando)
+# ─────────────────────────────────────────────────────────────
+script:
+  # fan_off  (0x3E0470B)
+  - id: tx_fan_off
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [375,-1088,364,-1107,359,-1101,1091,-369,1084,-369,1095,-368,1107,-343,1089,-391,359,-1093,395,-1095,351,-1096,366,-1096,360,-1093,395,-1090,1098,-351,365,-1117,366,-1105,343,-1125,1093,-362,1068,-389,1090,-368,359,-1099,389,-1092,364,-1094,383,-1109,1079,-370,394,-1077,1109,-352,1090,-369,1091]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # fan_1  (0x3E047E8)
+  - id: tx_fan_1
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [403,-1072,380,-1093,363,-1089,1097,-378,1095,-339,1112,-352,1116,-339,1096,-385,375,-1090,366,-1083,380,-1098,365,-1101,380,-1096,345,-1089,1103,-369,366,-1114,370,-1083,383,-1074,1114,-368,1084,-381,1093,-366,1097,-358,1093,-391,1091,-350,388,-1114,1092,-364,374,-1089,367,-1111,350,-1098,365]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # fan_2  (0x3E047C8)
+  - id: tx_fan_2
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [399,-1078,397,-1075,370,-1101,1090,-370,1085,-358,1091,-392,1087,-357,1093,-395,365,-1098,362,-1115,342,-1099,366,-1095,365,-1102,358,-1093,1096,-383,373,-1088,389,-1089,348,-1099,1093,-390,1080,-370,1095,-372,1109,-342,1089,-393,356,-1119,337,-1140,1093,-362,375,-1116,339,-1112,349,-1096,1117]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # fan_3  (0x3E047A9)
+  - id: tx_fan_3
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [402,-1092,362,-1096,360,-1094,1086,-390,1081,-358,1091,-396,1076,-372,1090,-392,337,-1118,336,-1120,366,-1101,352,-1118,338,-1112,350,-1096,1113,-365,352,-1116,360,-1089,362,-1096,1088,-395,1095,-368,1075,-400,1067,-365,382,-1097,1086,-370,365,-1112,1090,-366,361,-1107,373,-1089,1090,-366,359]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # fan_4  (0x3E04789)
+  - id: tx_fan_4
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [400,-1107,348,-1100,365,-1097,1112,-349,1092,-364,1121,-362,1095,-358,1093,-366,367,-1107,371,-1091,366,-1110,374,-1092,365,-1093,364,-1103,1108,-341,363,-1121,367,-1098,358,-1099,1114,-343,1099,-371,1120,-341,1107,-356,391,-1088,367,-1105,372,-1100,1090,-370,388,-1095,358,-1098,1089,-391,1081]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # fan_5  (0x3E0476A)
+  - id: tx_fan_5
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [375,-1097,359,-1115,341,-1124,1069,-395,1093,-351,1090,-365,1100,-386,1068,-389,362,-1099,360,-1098,390,-1094,364,-1094,360,-1119,342,-1099,1092,-394,337,-1117,359,-1121,338,-1110,1091,-373,1084,-374,1092,-364,384,-1097,1085,-373,1090,-389,362,-1095,1085,-401,370,-1087,1089,-385,362,-1101,351]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # fan_6  (0x3E0474A)
+  - id: tx_fan_6
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [426,-1072,370,-1079,389,-1091,1092,-349,1101,-365,1099,-374,1091,-369,1088,-370,371,-1096,379,-1097,366,-1099,368,-1091,367,-1080,379,-1099,1090,-368,375,-1118,362,-1091,370,-1099,1091,-371,1085,-396,1095,-366,350,-1124,1089,-367,353,-1116,358,-1126,1091,-369,363,-1093,1116,-338,394,-1102,1079]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # brisa  (0x3E046B5)
+  - id: tx_brisa
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [403,-1093,363,-1072,396,-1092,1073,-368,1092,-391,1081,-360,1091,-365,1108,-364,374,-1092,367,-1107,358,-1087,391,-1089,366,-1079,383,-1109,1078,-358,391,-1112,369,-1074,397,-1086,1089,-368,1083,-396,342,-1101,1100,-365,364,-1097,1082,-381,1114,-361,361,-1099,1112,-371,359,-1090,1087,-390,353]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # luz1_onoff  (0x3E04695)
+  - id: tx_luz1_onoff
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [416,-1076,342,-1115,339,-1123,1093,-350,1098,-367,1100,-374,1092,-368,1081,-378,364,-1106,359,-1099,366,-1093,365,-1105,357,-1095,395,-1087,1093,-367,353,-1119,370,-1093,369,-1099,1093,-363,1071,-395,367,-1098,1075,-364,383,-1111,338,-1117,1109,-379,345,-1114,1093,-366,369,-1099,1094,-369,1084]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # luz1_tono  (0x3E04637)
+  - id: tx_luz1_tono
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [401,-1068,395,-1091,369,-1073,1097,-370,1092,-367,1085,-394,1069,-370,1073,-390,364,-1099,358,-1118,343,-1119,343,-1118,361,-1101,351,-1090,1095,-362,359,-1129,352,-1117,345,-1110,1085,-379,1071,-394,364,-1099,370,-1093,370,-1100,1073,-376,1092,-388,365,-1100,1098,-391,1065,-366,1101,-383,340]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # luz1_dim_dn  (0x3E046F4)
+  - id: tx_luz1_dim_dn
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [402,-1074,361,-1092,369,-1101,1101,-364,1099,-353,1091,-369,1090,-369,1098,-375,371,-1089,358,-1087,391,-1088,370,-1082,370,-1097,370,-1091,1085,-364,377,-1091,396,-1091,371,-1071,1098,-370,1089,-369,387,-1098,1075,-364,1100,-370,1092,-366,1087,-394,371,-1084,1101,-366,372,-1099,365,-1092,365]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # luz1_dim_up  (0x3E04733)
+  - id: tx_luz1_dim_up
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [411,-1068,360,-1118,359,-1094,1086,-366,1101,-369,1095,-349,1097,-391,1072,-377,365,-1116,368,-1080,369,-1122,344,-1089,361,-1099,383,-1098,1075,-366,370,-1099,363,-1099,382,-1098,1075,-365,1098,-395,1068,-368,387,-1095,359,-1097,1072,-402,1097,-361,365,-1125,370,-1074,1099,-371,1092,-369,356]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # luz2_onoff  (0x3E04676)
+  - id: tx_luz2_onoff
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [376,-1090,365,-1096,369,-1097,1073,-368,1113,-366,1081,-369,1096,-374,1084,-373,364,-1115,368,-1076,383,-1110,352,-1091,370,-1115,343,-1100,1098,-369,366,-1095,367,-1101,369,-1099,1098,-343,1115,-368,360,-1095,369,-1116,1072,-367,1090,-389,1083,-395,370,-1079,1111,-353,1092,-365,361,-1096,396]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # luz2_tono  (0x3E04752)
+  - id: tx_luz2_tono
+    then:
+      - remote_transmitter.transmit_raw:
+          carrier_frequency: 0Hz
+          code: [402,-1084,367,-1091,369,-1081,1100,-365,1092,-365,1102,-369,1094,-372,1073,-391,370,-1096,364,-1093,366,-1099,370,-1093,369,-1091,361,-1099,1085,-378,365,-1106,371,-1097,365,-1094,1093,-373,1099,-366,1097,-379,343,-1118,1071,-395,370,-1096,1072,-402,346,-1117,368,-1111,1085,-355,365,-1118,1092]
+          repeat: { times: 10, wait_time: 5ms }
+
+  # Cola de pasos Luz 1 (serializa los envios para que no se solapen)
+  - id: tx_step_luz1
+    mode: queued
+    parameters:
+      kind: int      # 0=onoff 1=dim+ 2=dim- 3=tono
+    then:
+      - lambda: |-
+          switch (kind) {
+            case 0: id(tx_luz1_onoff).execute(); break;
+            case 1: id(tx_luz1_dim_up).execute(); break;
+            case 2: id(tx_luz1_dim_dn).execute(); break;
+            case 3: id(tx_luz1_tono).execute(); break;
+          }
+      - delay: 700ms
+
+  # Cola de pasos Luz 2  (0=onoff 1=tono)
+  - id: tx_step_luz2
+    mode: queued
+    parameters:
+      kind: int
+    then:
+      - lambda: |-
+          switch (kind) {
+            case 0: id(tx_luz2_onoff).execute(); break;
+            case 1: id(tx_luz2_tono).execute(); break;
+          }
+      - delay: 700ms
+
+# ─────────────────────────────────────────────────────────────
+#  OUTPUTS plantilla
+# ─────────────────────────────────────────────────────────────
+output:
+  # Ventilador: 0..1 -> velocidad 0..6
+  - platform: template
+    type: float
+    id: fan_out
+    write_action:
+      - lambda: |-
+          int spd = (int) (state * 6.0f + 0.5f);
+          ESP_LOGI("tx", "FAN desde HA: state=%.3f -> vel=%d (supp=%d ms=%u)", state, spd, (int)(millis() < id(suppress_until)), (unsigned) millis());
+          if (millis() < 4000) return;          // anti-arranque
+          if (millis() < id(suppress_until)) return;          // cambio venido del mando -> no retransmitir
+          switch (spd) {
+            case 0: id(tx_fan_off).execute(); break;
+            case 1: id(tx_fan_1).execute(); break;
+            case 2: id(tx_fan_2).execute(); break;
+            case 3: id(tx_fan_3).execute(); break;
+            case 4: id(tx_fan_4).execute(); break;
+            case 5: id(tx_fan_5).execute(); break;
+            case 6: id(tx_fan_6).execute(); break;
+          }
+  # Salidas "vacias": la logica de las luces va en on_state (no en el output)
+  - { platform: template, type: float, id: luz1_bri_out, write_action: [ { lambda: 'return;' } ] }
+  - { platform: template, type: float, id: luz1_ct_out,  write_action: [ { lambda: 'return;' } ] }
+  - { platform: template, type: float, id: luz2_bri_out, write_action: [ { lambda: 'return;' } ] }
+  - { platform: template, type: float, id: luz2_ct_out,  write_action: [ { lambda: 'return;' } ] }
+
+# ─────────────────────────────────────────────────────────────
+#  ENTIDADES Home Assistant
+# ─────────────────────────────────────────────────────────────
+fan:
+  - platform: speed
+    output: fan_out
+    name: "Ventilador"
+    id: fan_vent
+    speed_count: 6
+    restore_mode: ALWAYS_OFF
+
+light:
+  # ---- LUZ 1: brillo (4 niveles) + 3 tonos ----
+  - platform: color_temperature
+    name: "Luz 1"
+    id: luz1
+    brightness: luz1_bri_out
+    color_temperature: luz1_ct_out
+    cold_white_color_temperature: 153 mireds
+    warm_white_color_temperature: 500 mireds
+    gamma_correct: 1.0
+    default_transition_length: 0s
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_state:
+      - lambda: |-
+          auto v = id(luz1).remote_values;
+          bool on = v.get_state() > 0.5f;
+          ESP_LOGI("tx", "LUZ1 desde HA: on=%d bri=%.2f ct=%.0f (supp=%d ms=%u)", on, v.get_brightness(), v.get_color_temperature(), (int)(millis() < id(suppress_until)), (unsigned) millis());
+          if (millis() < 4000) return;
+          if (millis() < id(suppress_until)) return;
+          // on/off
+          if (on != id(luz1_on)) { id(tx_step_luz1).execute(0); id(luz1_on) = on; }
+          if (on) {
+            // brillo -> nivel 1..4
+            int lvl = (int)(v.get_brightness() * 8.0f + 0.5f);   // Luz 1: 8 niveles (nivel k -> k/8); 1=min .. 8=max
+            if (lvl < 1) lvl = 1; if (lvl > 8) lvl = 8;
+            int d = lvl - id(luz1_lvl);
+            for (int i = 0; i < d;  i++) id(tx_step_luz1).execute(1);   // sube
+            for (int i = 0; i < -d; i++) id(tx_step_luz1).execute(2);   // baja
+            id(luz1_lvl) = lvl;
+            // temperatura -> tono 1..3 (el boton cicla, por eso modulo 3)
+            // Luz 1: el ciclo real del mando es calido->neutro->frio, y el contador
+            // arranca en frio -> idx1=frio(153), idx2=calido(500), idx3=neutro(326)
+            float ct1 = v.get_color_temperature();
+            int tone = (ct1 < 239.5f) ? 1 : (ct1 >= 413.0f) ? 2 : 3;
+            int s = ((tone - id(luz1_tone)) % 3 + 3) % 3;
+            for (int i = 0; i < s; i++) id(tx_step_luz1).execute(3);
+            id(luz1_tone) = tone;
+          }
+
+  # ---- LUZ 2: on/off + 3 tonos (sin dimmer; el slider de brillo es decorativo) ----
+  - platform: color_temperature
+    name: "Luz 2"
+    id: luz2
+    brightness: luz2_bri_out
+    color_temperature: luz2_ct_out
+    cold_white_color_temperature: 153 mireds
+    warm_white_color_temperature: 500 mireds
+    gamma_correct: 1.0
+    default_transition_length: 0s
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_state:
+      - lambda: |-
+          auto v = id(luz2).remote_values;
+          bool on = v.get_state() > 0.5f;
+          ESP_LOGI("tx", "LUZ2 desde HA: on=%d ct=%.0f (supp=%d ms=%u)", on, v.get_color_temperature(), (int)(millis() < id(suppress_until)), (unsigned) millis());
+          if (millis() < 4000) return;
+          if (millis() < id(suppress_until)) return;
+          if (on != id(luz2_on)) { id(tx_step_luz2).execute(0); id(luz2_on) = on; }
+          if (on) {
+            int tone = 3 - (int)((v.get_color_temperature() - 153.0f) / 347.0f * 2.0f + 0.5f);
+            if (tone < 1) tone = 1; if (tone > 3) tone = 3;
+            int s = ((tone - id(luz2_tone)) % 3 + 3) % 3;
+            for (int i = 0; i < s; i++) id(tx_step_luz2).execute(1);
+            id(luz2_tone) = tone;
+          }
+
+button:
+  - platform: template
+    name: "Brisa Natural"
+    on_press:
+      - script.execute: tx_brisa
+
+  - platform: template
+    name: "Test TX continuo"
+    on_press:
+      - cc1101.begin_tx: { id: cc1101_radio }
+      - delay: 3000ms
+      - cc1101.begin_rx: { id: cc1101_radio }
+
+# ─────────────────────────────────────────────────────────────
+#  RECEPTOR: refleja en HA lo que se pulsa en el MANDO fisico
+# ─────────────────────────────────────────────────────────────
+remote_receiver:
+  - id: rf_rx
+    pin: GPIO25             # GDO2
+    dump: raw
+    tolerance: 25%
+    filter: 250us
+    idle: 4ms
+    buffer_size: 10kb
+    rmt_symbols: 96
+    on_rc_switch:
+      - if:
+          condition:
+            lambda: |-
+              if (x.protocol != 1) return false;
+              uint32_t code = (uint32_t) x.code;
+              uint32_t now = millis();
+              if (code == id(last_rx_code) && (now - id(last_rx_ms)) < 350) { id(last_rx_ms) = now; return false; }
+              id(last_rx_code) = code; id(last_rx_ms) = now; return true;
+          then:
+            - lambda: |-
+                id(suppress_until) = millis() + 500;   // ignora retransmision durante 500ms
+                uint32_t code = id(last_rx_code);
+                const float COLD = 153.0f, SPAN = 347.0f;   // 153..500 mireds
+                switch (code) {
+                  case 0x3E0470B: { auto c = id(fan_vent).turn_off();              c.perform(); } break;
+                  case 0x3E047E8: { auto c = id(fan_vent).turn_on(); c.set_speed(1); c.perform(); } break;
+                  case 0x3E047C8: { auto c = id(fan_vent).turn_on(); c.set_speed(2); c.perform(); } break;
+                  case 0x3E047A9: { auto c = id(fan_vent).turn_on(); c.set_speed(3); c.perform(); } break;
+                  case 0x3E04789: { auto c = id(fan_vent).turn_on(); c.set_speed(4); c.perform(); } break;
+                  case 0x3E0476A: { auto c = id(fan_vent).turn_on(); c.set_speed(5); c.perform(); } break;
+                  case 0x3E0474A: { auto c = id(fan_vent).turn_on(); c.set_speed(6); c.perform(); } break;
+
+                  case 0x3E04695: {
+                    id(luz1_on) = !id(luz1_on);
+                    if (id(luz1_on)) { auto c = id(luz1).turn_on();
+                      c.set_brightness(id(luz1_lvl) / 8.0f);
+                      c.set_color_temperature(id(luz1_tone) == 1 ? 153.0f : id(luz1_tone) == 2 ? 500.0f : 326.0f);
+                      c.set_transition_length(0); c.perform(); }
+                    else { auto c = id(luz1).turn_off(); c.set_transition_length(0); c.perform(); }
+                  } break;
+                  case 0x3E04733: { if (id(luz1_on)) { int l = id(luz1_lvl) + 1; if (l > 8) l = 8; id(luz1_lvl) = l;
+                      auto c = id(luz1).turn_on(); c.set_brightness(l / 8.0f); c.set_transition_length(0); c.perform(); } } break;
+                  case 0x3E046F4: { if (id(luz1_on)) { int l = id(luz1_lvl) - 1; if (l < 1) l = 1; id(luz1_lvl) = l;
+                      auto c = id(luz1).turn_on(); c.set_brightness(l / 8.0f); c.set_transition_length(0); c.perform(); } } break;
+                  case 0x3E04637: { if (id(luz1_on)) { int t = id(luz1_tone) % 3 + 1; id(luz1_tone) = t;
+                      auto c = id(luz1).turn_on(); c.set_color_temperature(t == 1 ? 153.0f : t == 2 ? 500.0f : 326.0f); c.set_transition_length(0); c.perform(); } } break;
+
+                  case 0x3E04676: {
+                    id(luz2_on) = !id(luz2_on);
+                    if (id(luz2_on)) { auto c = id(luz2).turn_on();
+                      c.set_color_temperature(COLD + (3 - id(luz2_tone)) / 2.0f * SPAN);
+                      c.set_transition_length(0); c.perform(); }
+                    else { auto c = id(luz2).turn_off(); c.set_transition_length(0); c.perform(); }
+                  } break;
+                  case 0x3E04752: { if (id(luz2_on)) { int t = id(luz2_tone) % 3 + 1; id(luz2_tone) = t;
+                      auto c = id(luz2).turn_on(); c.set_color_temperature(COLD + (3 - t) / 2.0f * SPAN); c.set_transition_length(0); c.perform(); } } break;
+
+                  default: break;   // brisa: sin estado en HA
+                }
+                ESP_LOGI("rf", "MANDO -> code=0x%X", code);
