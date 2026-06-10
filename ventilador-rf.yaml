@@ -215,6 +215,52 @@ script:
           }
       - delay: 700ms
 
+  # Debounce Luz 1: espera 400ms a que los valores se estabilicen antes de transmitir.
+  # mode:restart reinicia el temporizador en cada llamada -> si AL manda 5 updates en
+  # 2 segundos, solo el ultimo (el valor ya estable) genera trafico RF.
+  - id: debounce_luz1
+    mode: restart
+    then:
+      - delay: 400ms
+      - lambda: |-
+          auto v = id(luz1).remote_values;
+          bool on = v.get_state() > 0.5f;
+          if (millis() < 4000) return;
+          if (millis() < id(suppress_until)) return;
+          if (on != id(luz1_on)) { id(tx_step_luz1).execute(0); id(luz1_on) = on; }
+          if (on) {
+            int lvl = (int)(v.get_brightness() * 8.0f + 0.5f);
+            if (lvl < 1) lvl = 1; if (lvl > 8) lvl = 8;
+            int d = lvl - id(luz1_lvl);
+            for (int i = 0; i < d;  i++) id(tx_step_luz1).execute(1);
+            for (int i = 0; i < -d; i++) id(tx_step_luz1).execute(2);
+            id(luz1_lvl) = lvl;
+            float ct1 = v.get_color_temperature();
+            int tone = (ct1 < 239.5f) ? 1 : (ct1 >= 413.0f) ? 2 : 3;
+            int s = ((tone - id(luz1_tone)) % 3 + 3) % 3;
+            for (int i = 0; i < s; i++) id(tx_step_luz1).execute(3);
+            id(luz1_tone) = tone;
+          }
+
+  # Debounce Luz 2: misma logica que debounce_luz1
+  - id: debounce_luz2
+    mode: restart
+    then:
+      - delay: 400ms
+      - lambda: |-
+          auto v = id(luz2).remote_values;
+          bool on = v.get_state() > 0.5f;
+          if (millis() < 4000) return;
+          if (millis() < id(suppress_until)) return;
+          if (on != id(luz2_on)) { id(tx_step_luz2).execute(0); id(luz2_on) = on; }
+          if (on) {
+            int tone = 3 - (int)((v.get_color_temperature() - 153.0f) / 347.0f * 2.0f + 0.5f);
+            if (tone < 1) tone = 1; if (tone > 3) tone = 3;
+            int s = ((tone - id(luz2_tone)) % 3 + 3) % 3;
+            for (int i = 0; i < s; i++) id(tx_step_luz2).execute(1);
+            id(luz2_tone) = tone;
+          }
+
 # ─────────────────────────────────────────────────────────────
 #  OUTPUTS plantilla
 # ─────────────────────────────────────────────────────────────
@@ -268,31 +314,7 @@ light:
     default_transition_length: 0s
     restore_mode: RESTORE_DEFAULT_OFF
     on_state:
-      - lambda: |-
-          auto v = id(luz1).remote_values;
-          bool on = v.get_state() > 0.5f;
-          ESP_LOGI("tx", "LUZ1 desde HA: on=%d bri=%.2f ct=%.0f (supp=%d ms=%u)", on, v.get_brightness(), v.get_color_temperature(), (int)(millis() < id(suppress_until)), (unsigned) millis());
-          if (millis() < 4000) return;
-          if (millis() < id(suppress_until)) return;
-          // on/off
-          if (on != id(luz1_on)) { id(tx_step_luz1).execute(0); id(luz1_on) = on; }
-          if (on) {
-            // brillo -> nivel 1..4
-            int lvl = (int)(v.get_brightness() * 8.0f + 0.5f);   // Luz 1: 8 niveles (nivel k -> k/8); 1=min .. 8=max
-            if (lvl < 1) lvl = 1; if (lvl > 8) lvl = 8;
-            int d = lvl - id(luz1_lvl);
-            for (int i = 0; i < d;  i++) id(tx_step_luz1).execute(1);   // sube
-            for (int i = 0; i < -d; i++) id(tx_step_luz1).execute(2);   // baja
-            id(luz1_lvl) = lvl;
-            // temperatura -> tono 1..3 (el boton cicla, por eso modulo 3)
-            // Luz 1: el ciclo real del mando es calido->neutro->frio, y el contador
-            // arranca en frio -> idx1=frio(153), idx2=calido(500), idx3=neutro(326)
-            float ct1 = v.get_color_temperature();
-            int tone = (ct1 < 239.5f) ? 1 : (ct1 >= 413.0f) ? 2 : 3;
-            int s = ((tone - id(luz1_tone)) % 3 + 3) % 3;
-            for (int i = 0; i < s; i++) id(tx_step_luz1).execute(3);
-            id(luz1_tone) = tone;
-          }
+      - lambda: id(debounce_luz1).execute();
 
   # ---- LUZ 2: on/off + 3 tonos (sin dimmer; el slider de brillo es decorativo) ----
   - platform: color_temperature
@@ -306,20 +328,7 @@ light:
     default_transition_length: 0s
     restore_mode: RESTORE_DEFAULT_OFF
     on_state:
-      - lambda: |-
-          auto v = id(luz2).remote_values;
-          bool on = v.get_state() > 0.5f;
-          ESP_LOGI("tx", "LUZ2 desde HA: on=%d ct=%.0f (supp=%d ms=%u)", on, v.get_color_temperature(), (int)(millis() < id(suppress_until)), (unsigned) millis());
-          if (millis() < 4000) return;
-          if (millis() < id(suppress_until)) return;
-          if (on != id(luz2_on)) { id(tx_step_luz2).execute(0); id(luz2_on) = on; }
-          if (on) {
-            int tone = 3 - (int)((v.get_color_temperature() - 153.0f) / 347.0f * 2.0f + 0.5f);
-            if (tone < 1) tone = 1; if (tone > 3) tone = 3;
-            int s = ((tone - id(luz2_tone)) % 3 + 3) % 3;
-            for (int i = 0; i < s; i++) id(tx_step_luz2).execute(1);
-            id(luz2_tone) = tone;
-          }
+      - lambda: id(debounce_luz2).execute();
 
 button:
   - platform: template
