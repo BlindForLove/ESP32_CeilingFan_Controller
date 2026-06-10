@@ -58,7 +58,7 @@ remote_transmitter:
 #  Estado interno
 #   suppress_until : ventana (millis) tras orden del mando -> no retransmitir
 #   last_rx_*   : antirrebote (el mando repite la trama)
-#   luzX_*      : cuenta interna de estado (brillo nivel 1-4, tono 1-3)
+#   luzX_*      : cuenta interna de estado (brillo nivel 1-8, tono 1-3)
 #   (anti-arranque: se usa millis() > 4000 en cada ruta TX, sin global)
 # ─────────────────────────────────────────────────────────────
 globals:
@@ -272,7 +272,7 @@ output:
     write_action:
       - lambda: |-
           int spd = (int) (state * 6.0f + 0.5f);
-          ESP_LOGI("tx", "FAN desde HA: state=%.3f -> vel=%d (supp=%d ms=%u)", state, spd, (int)(millis() < id(suppress_until)), (unsigned) millis());
+          ESP_LOGD("tx", "FAN desde HA: state=%.3f -> vel=%d", state, spd);
           if (millis() < 4000) return;          // anti-arranque
           if (millis() < id(suppress_until)) return;          // cambio venido del mando -> no retransmitir
           switch (spd) {
@@ -302,7 +302,7 @@ fan:
     restore_mode: ALWAYS_OFF
 
 light:
-  # ---- LUZ 1: brillo (4 niveles) + 3 tonos ----
+  # ---- LUZ 1: brillo (8 niveles) + 3 tonos ----
   - platform: color_temperature
     name: "Luz 1"
     id: luz1
@@ -338,6 +338,7 @@ button:
 
   - platform: template
     name: "Test TX continuo"
+    entity_category: diagnostic
     on_press:
       - cc1101.begin_tx: { id: cc1101_radio }
       - delay: 3000ms
@@ -349,7 +350,7 @@ button:
 remote_receiver:
   - id: rf_rx
     pin: GPIO25             # GDO2
-    dump: raw
+    # dump: raw             # descomentar solo para capturar botones nuevos (p.ej. Reverse); spamea el log
     tolerance: 25%
     filter: 250us
     idle: 4ms
