@@ -112,18 +112,15 @@ Los pasos se encolan (`mode: queued`) con 700 ms de separación para que el vent
 ## Estructura de archivos
 
 ```
-├── ventilador-rf.yaml   # Configuración ESPHome (generada, no editar a mano)
-├── _gen.py              # Generador + verificador de tramas (editar aquí)
+├── ventilador-rf.yaml   # Configuración ESPHome
 └── secrets.yaml         # Credenciales WiFi/API (NO subir al repo)
 ```
 
-**El flujo de trabajo correcto es:**
+**Para flashear:**
 
-1. Editar `_gen.py` (tramas, lógica)
-2. Ejecutar `python _gen.py` — verifica las 14 tramas y genera el YAML
-3. Flashear con `esphome run ventilador-rf.yaml`
-
-El generador verifica automáticamente que cada trama capturada decodifica exactamente al código binario esperado antes de escribir el YAML. Si alguna trama es inválida, el script falla con error y no escribe nada.
+```bash
+esphome run ventilador-rf.yaml
+```
 
 ---
 
