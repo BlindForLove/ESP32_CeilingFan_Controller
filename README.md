@@ -193,4 +193,4 @@ El parámetro `gdo0_pin` en el bloque `cc1101:` rompe el enrutamiento RMT. La co
 
 ## ☕ Support
 If you find this project useful, consider buying me a coffee:
-[Buy Me a Coffee](https://buymeacoffee.com/blindforlove])
+[Buy Me a Coffee](https://buymeacoffee.com/blindforlove)
