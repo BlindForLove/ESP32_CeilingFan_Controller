@@ -187,3 +187,10 @@ El parámetro `gdo0_pin` en el bloque `cc1101:` rompe el enrutamiento RMT. La co
 - [Proyecto de referencia cc1101-esp32-esphome-fan-controller](https://github.com/Daedilus/cc1101-esp32-esphome-fan-controller) — usa el componente nativo CC1101 de ESPHome
 - [ESPHome CC1101 (componente nativo)](https://esphome.io/components/cc1101.html)
 - [ESPHome issue #16876](https://github.com/esphome/esphome/issues/16876) — bug gdo0_pin rompe RMT
+
+
+
+
+## ☕ Support
+If you find this project useful, consider buying me a coffee:
+[Buy Me a Coffee](https://buymeacoffee.com/blindforlove])
